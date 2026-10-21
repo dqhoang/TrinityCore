@@ -10,7 +10,8 @@ Usage:
   py -3 support_server.py --make-token <bnetAccountId> <realmId> [config.json]
                                                               issue a 1 hour test token and print the URL (desktop browser test)
 Account page (/account): Battle.net account, game accounts, characters on every realm, and the authenticator (TOTP, any
-authenticator app). bnetserver asks for its code at login; secured accounts get the +4 backpack slots in game.
+authenticator app). bnetserver asks for its code at login; secured accounts get the +4 backpack slots in game. An account that
+already has one shows its key (and QR) on the page, so another app can be added or the code can be read off the app.
 Shop (/shop): shop points, premium status, selling gold on the Gold Market (premium accounts; ".shop goldlist" through RA).
 Shop admin (/staff/shop, staff level >= shop_admin_level): products and tabs of the in-game Store, Gold Market listings,
 accounts (points, premium, Gold Market bans), the service fee. Product changes are pushed with ".shop reload" on every realm.
@@ -898,11 +899,20 @@ class Handler(BaseHTTPRequestHandler):
         # security
         pending = s.get('totp_pending')
         if secured:
-            security = ('<p>Your account is protected by an authenticator. The game asks for its code each time you log in.</p>'
-                        '<p class="muted">Lost your phone or reset the app? <a href="/ticket/new?category=account">Ask a game master</a> to remove it.</p>'
+            secret = bnet['authenticator_secret']
+            qr = qr_svg(totp_uri(secret, bnet['email']))
+            grouped = ' '.join(secret[i:i + 4] for i in range(0, len(secret), 4))
+            security = ('<p>Your account is protected by an authenticator. The game asks for its code each time you log in, '
+                        'and every character gets 4 extra backpack slots.</p>'
+                        '<ol class="steps"><li>To use it on another phone or PC, scan this code%s in an authenticator app.</li>'
+                        '<li>When the game asks for its code, type the 6 digits the app is showing now.</li></ol>'
+                        '%s<div class="field"><span>Or type this key into the app (time based)</span><div class="mono totp-key">%s</div></div>'
+                        '<p class="muted">Lost your phone or reset the app? <a href="/ticket/new?category=account">Ask a game master</a> '
+                        'to remove it.</p>'
                         '<form method="post" action="/account/authenticator/remove">%s<div class="field"><span>To remove it, enter a current code</span>'
                         '<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div>'
-                        '<div class="actions"><button class="btn danger" type="submit">Remove authenticator</button></div></form>') % self.csrf_field()
+                        '<div class="actions"><button class="btn danger" type="submit">Remove authenticator</button></div></form>') % (
+                            '' if qr else ' (or type the key below)', '<div class="qr">%s</div>' % qr if qr else '', esc(grouped), self.csrf_field())
         elif pending:
             qr = qr_svg(totp_uri(pending, bnet['email']))
             grouped = ' '.join(pending[i:i + 4] for i in range(0, len(pending), 4))
